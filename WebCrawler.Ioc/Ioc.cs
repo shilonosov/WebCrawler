@@ -17,7 +17,7 @@ namespace WebCrawler.Ioc
         static Ioc()
         {
             var containerBuilder = new ContainerBuilder();
-            containerBuilder.RegisterType<Repository>().AsImplementedInterfaces().SingleInstance();
+            containerBuilder.RegisterType<Crawler>().AsImplementedInterfaces().SingleInstance();
 
             container = containerBuilder.Build();
         }
