@@ -46,8 +46,9 @@ namespace WebCrowler
             {
                 UiLock();
                 crawler
-                    .Crawl(searchUri, 2, new ControlScheduler(this))
-                    .Subscribe(x => CrawlingCompeted(x));
+                    .Crawl(searchUri, 2)
+                    .SubscribeOn(this)
+                    .Subscribe(CrawlingCompeted);
             }
         }
 
