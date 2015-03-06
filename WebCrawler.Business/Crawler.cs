@@ -15,6 +15,7 @@ using Autofac.Util;
 using WebCrawler.Business.Models;
 
 using Disposable = System.Reactive.Disposables.Disposable;
+using System.Reactive.Disposables;
 
 namespace WebCrawler.Business
 {
@@ -25,7 +26,7 @@ namespace WebCrawler.Business
 
     public class Crawler : ICrawler
     {
-        private async Task ParsePage(CrawledPageModel parent, IObserver<CrawledPageModel> subject)
+        private async Task ParsePage(CrawledPageModel parent, IObserver<CrawledPageModel> subject, BooleanDisposable booleanDisposable)
         {
             await Task.Run(() =>
             {
@@ -39,8 +40,11 @@ namespace WebCrawler.Business
             var rootPage = new CrawledPageModel(startUri, new List<CrawledPageModel>(), 0);
             return Observable.Create<CrawledPageModel>(o =>
             {
-                ParsePage(rootPage, o);
-                return Disposable.Empty;
+                var disposable = new BooleanDisposable();
+                ParsePage(rootPage, o, disposable)
+                    .ToObservable()
+                    .Subscribe();
+                return disposable;
             });
         }
     }
