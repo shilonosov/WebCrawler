@@ -47,7 +47,8 @@ namespace WebCrowler
                 UiLock();
                 crawler
                     .Crawl(searchUri, 2)
-                    .SubscribeOn(this)
+                    .SubscribeOn(TaskPoolScheduler.Default)
+                    .ObserveOn(new ControlScheduler(this))
                     .Subscribe(CrawlingCompeted);
             }
         }
@@ -59,6 +60,9 @@ namespace WebCrowler
 
         private void CrawlingCompeted(CrawledPageModel model)
         {
+            var node = new TreeNode();
+            node.Text = "completed";
+            treeView1.Nodes.Add(node);
             MessageBox.Show("completed!");
             UiUnlock();
         }

@@ -16,6 +16,7 @@ using WebCrawler.Business.Models;
 
 using Disposable = System.Reactive.Disposables.Disposable;
 using System.Reactive.Disposables;
+using System.Collections.Concurrent;
 
 namespace WebCrawler.Business
 {
@@ -26,6 +27,8 @@ namespace WebCrawler.Business
 
     public class Crawler : ICrawler
     {
+        private IDictionary<string, CrawledPageModel> crawledPages;
+
         private async Task ParsePage(CrawledPageModel parent, IObserver<CrawledPageModel> subject, BooleanDisposable booleanDisposable)
         {
             await Task.Run(() =>
@@ -33,6 +36,11 @@ namespace WebCrawler.Business
                 Thread.Sleep(4000);
                 subject.OnNext(null);
             });
+        }
+
+        public Crawler()
+        {
+            crawledPages = new ConcurrentDictionary<string, CrawledPageModel>();
         }
 
         public IObservable<CrawledPageModel> Crawl(Uri startUri, uint bottomLevel)
