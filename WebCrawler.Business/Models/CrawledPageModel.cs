@@ -10,7 +10,7 @@ namespace WebCrawler.Business.Models
     {
         public Uri PageUri { get; private set; }
 
-        public IList<CrawledPageModel> Descendents { get; private set; }
+        public List<CrawledPageModel> Descendents { get; private set; }
 
         public uint Level { get; private set; }
 
@@ -24,11 +24,16 @@ namespace WebCrawler.Business.Models
             get { return Descendents.Count; }
         }
 
-        public CrawledPageModel(Uri pageUri, IList<CrawledPageModel> descendents, uint level)
+        public CrawledPageModel(Uri pageUri, List<CrawledPageModel> descendents, uint level)
         {
             PageUri = pageUri;
             Descendents = descendents;
             Level = level;
+        }
+
+        public void CopyDescendents(CrawledPageModel visitedPage)
+        {
+            Descendents.AddRange(visitedPage.Descendents);
         }
     }
 }

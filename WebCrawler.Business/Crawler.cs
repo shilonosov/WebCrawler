@@ -17,6 +17,7 @@ using WebCrawler.Business.Models;
 using Disposable = System.Reactive.Disposables.Disposable;
 using System.Reactive.Disposables;
 using System.Collections.Concurrent;
+using WebCrawler.Business.Services;
 
 namespace WebCrawler.Business
 {
@@ -27,29 +28,62 @@ namespace WebCrawler.Business
 
     public class Crawler : ICrawler
     {
-        private IDictionary<string, CrawledPageModel> crawledPages;
+        private ThreadSafeDictionary<Uri, CrawledPageModel> visitedPages;
+        private IHtmlPageService HtmlPageService { get; set; }
 
-        private async Task ParsePage(CrawledPageModel parent, IObserver<CrawledPageModel> subject, BooleanDisposable booleanDisposable)
+        private async Task ParsePage(
+            Uri pageUri,
+            uint level,
+            uint bottomLevel,
+            IObserver<CrawledPageModel> observable,
+            BooleanDisposable booleanDisposable)
         {
-            await Task.Run(() =>
+            var crawledPage = new CrawledPageModel(pageUri, null, level);
+
+            if (visitedPages.ContainsKey(pageUri))
             {
-                Thread.Sleep(4000);
-                subject.OnNext(null);
-            });
+                var visitedPage = visitedPages.GetValue(pageUri);
+                crawledPage.CopyDescendents(visitedPage);
+                observable.OnNext(crawledPage);
+            }
+
+            var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+            visitedPages.Add(new KeyValuePair<Uri, CrawledPageModel>(pageUri, crawledPage));
+
+            if (booleanDisposable.IsDisposed)
+            {
+                return;
+            }
+
+            observable.OnNext(crawledPage);
+
+            if (level > bottomLevel)
+            {
+                return;
+            }
+
+            foreach (var uri in childLinks)
+            {
+                if (booleanDisposable.IsDisposed)
+                {
+                    return;
+                }
+                await ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable);
+            }
         }
 
-        public Crawler()
+        public Crawler(IHtmlPageService htmlPageService)
         {
-            crawledPages = new ConcurrentDictionary<string, CrawledPageModel>();
+            visitedPages = new ThreadSafeDictionary<Uri, CrawledPageModel>();
+            HtmlPageService = htmlPageService;
         }
 
         public IObservable<CrawledPageModel> Crawl(Uri startUri, uint bottomLevel)
         {
-            var rootPage = new CrawledPageModel(startUri, new List<CrawledPageModel>(), 0);
             return Observable.Create<CrawledPageModel>(o =>
             {
                 var disposable = new BooleanDisposable();
-                ParsePage(rootPage, o, disposable)
+                ParsePage(startUri, 0, bottomLevel, o, disposable)
                     .ToObservable()
                     .Subscribe();
                 return disposable;

@@ -6,10 +6,10 @@ using System.Threading.Tasks;
 
 namespace WebCrawler.Business
 {
-    public interface IRepository
+    public interface IRepository<T>
     {
-        bool Add(string entity);
+        bool Add(T entity);
 
-        bool Contains(string entity);
+        bool Contains(T entity);
     }
 }

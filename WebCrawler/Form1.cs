@@ -61,9 +61,8 @@ namespace WebCrowler
         private void CrawlingCompeted(CrawledPageModel model)
         {
             var node = new TreeNode();
-            node.Text = "completed";
+            node.Text = model.PageUriString;
             treeView1.Nodes.Add(node);
-            MessageBox.Show("completed!");
             UiUnlock();
         }
 

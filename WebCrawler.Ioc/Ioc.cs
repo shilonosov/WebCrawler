@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Autofac;
 
 using WebCrawler.Business;
+using WebCrawler.Business.Services;
 
 namespace WebCrawler.Ioc
 {
@@ -18,6 +19,7 @@ namespace WebCrawler.Ioc
         {
             var containerBuilder = new ContainerBuilder();
             containerBuilder.RegisterType<Crawler>().AsImplementedInterfaces().SingleInstance();
+            containerBuilder.RegisterType<HtmlPageService>().AsImplementedInterfaces().SingleInstance();
 
             container = containerBuilder.Build();
         }
