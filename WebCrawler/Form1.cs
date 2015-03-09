@@ -49,7 +49,7 @@ namespace WebCrowler
                     .Crawl(searchUri, 2)
                     .SubscribeOn(TaskPoolScheduler.Default)
                     .ObserveOn(new ControlScheduler(this))
-                    .Subscribe(CrawlingCompeted);
+                    .Subscribe(CrawlingNext, CrawlingCompleted);
             }
         }
 
@@ -58,12 +58,16 @@ namespace WebCrowler
             SetControlsEnabled(false, uiControls);
         }
 
-        private void CrawlingCompeted(CrawledPageModel model)
+        private void CrawlingNext(CrawledPageModel model)
         {
             var node = new TreeNode();
-            node.Text = model.PageUriString;
+            node.Text = string.Format("{0} : {1}", model.Level, model.PageUriString);
             treeView1.Nodes.Add(node);
-            UiUnlock();
+        }
+
+        private void CrawlingCompleted()
+        {
+            //UiUnlock();
         }
 
         private void UiUnlock()

@@ -28,7 +28,8 @@ namespace WebCrawler.Business
 
     public class Crawler : ICrawler
     {
-        private ThreadSafeDictionary<Uri, CrawledPageModel> visitedPages;
+        // TODO:
+        private PromiseRepository<Uri, CrawledPageModel> visitedPromises;
         private IHtmlPageService HtmlPageService { get; set; }
 
         private async Task ParsePage(
@@ -38,43 +39,50 @@ namespace WebCrawler.Business
             IObserver<CrawledPageModel> observable,
             BooleanDisposable booleanDisposable)
         {
-            var crawledPage = new CrawledPageModel(pageUri, null, level);
-
-            if (visitedPages.ContainsKey(pageUri))
-            {
-                var visitedPage = visitedPages.GetValue(pageUri);
-                crawledPage.CopyDescendents(visitedPage);
-                observable.OnNext(crawledPage);
-            }
-
-            var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
-            visitedPages.Add(new KeyValuePair<Uri, CrawledPageModel>(pageUri, crawledPage));
-
             if (booleanDisposable.IsDisposed)
             {
                 return;
             }
 
-            observable.OnNext(crawledPage);
-
-            if (level > bottomLevel)
+            if (visitedPromises.TryAddPromise(pageUri))
             {
-                return;
-            }
+                var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+                var crawledPage = new CrawledPageModel(pageUri, childLinks, level);
+                visitedPromises.AddValue(pageUri, crawledPage);
+                observable.OnNext(crawledPage);
 
-            foreach (var uri in childLinks)
-            {
-                if (booleanDisposable.IsDisposed)
+                if (level >= bottomLevel)
                 {
                     return;
                 }
-                await ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable);
+
+                foreach (var uri in childLinks)
+                {
+                    if (booleanDisposable.IsDisposed)
+                    {
+                        return;
+                    }
+                    await ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable);
+                }
+
+                if (level == 0)
+                {
+                    observable.OnCompleted();
+                }
+            }
+            else
+            {
+                visitedPromises.AddHandler(pageUri, x =>
+                {
+                    var crawledPage = new CrawledPageModel(pageUri, x, level);
+                    observable.OnNext(crawledPage);
+                });
             }
         }
 
         public Crawler(IHtmlPageService htmlPageService)
         {
-            visitedPages = new ThreadSafeDictionary<Uri, CrawledPageModel>();
+            visitedPromises = new PromiseRepository<Uri, CrawledPageModel>();
             HtmlPageService = htmlPageService;
         }
 

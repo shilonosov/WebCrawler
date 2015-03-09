@@ -7,9 +7,13 @@ using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Reactive.Disposables;
+using WebCrawler.Business.Promises;
 
 namespace WebCrawler.Business
 {
+    // TODO: move classes to separate files
+
     public abstract class ThreadSafeWrapper
     {
         private readonly object synchronizationContext;
@@ -102,54 +106,22 @@ namespace WebCrawler.Business
 
     public class PromiseRepository<TKey, TValue> : ThreadSafeWrapper
     {
-        private ISet<TKey> promises;
-        private IDictionary<TKey, IList<Action<TValue>>> handlers;
-        private IDictionary<TKey, TValue> values;
+        private IDictionary<TKey, PromisedValue<TValue>> promises;
 
-        private void InternalAddHandler(TKey key, Action<TValue> handlerSelector)
+        public PromiseRepository() : base()
         {
-            if (handlers.ContainsKey(key))
-            {
-                var list = handlers[key];
-                list.Add(handlerSelector);
-            }
-            else
-            {
-                var list = new List<Action<TValue>>();
-                list.Add(handlerSelector);
-                handlers.Add(key, list);
-            }
-        }
-
-        private async Task NotifySubscribersAsync(TValue value, IList<Action<TValue>> handlersCollection)
-        {
-            foreach (var handler in handlersCollection)
-            {
-                await Task.Run(() =>
-                {
-                    var h = handler;
-                    h(value);
-                });
-            }
-        }
-
-        public PromiseRepository()
-            : base()
-        {
-            promises = new HashSet<TKey>();
-            handlers = new Dictionary<TKey, IList<Action<TValue>>>();
-            values = new Dictionary<TKey, TValue>();
+            promises = new Dictionary<TKey, PromisedValue<TValue>>();
         }
 
         public bool TryAddPromise(TKey key)
         {
             return DoInLock(() =>
             {
-                if (promises.Contains(key) || values.ContainsKey(key))
+                if (promises.ContainsKey(key))
                 {
                     return false;
                 }
-                promises.Add(key);
+                promises.Add(key, new PromisedValue<TValue>());
                 return true;
             });
         }
@@ -158,32 +130,34 @@ namespace WebCrawler.Business
         {
             DoInLock(() =>
             {
-                promises.Remove(key);
-                values.Add(key, value);
-                if (handlers.ContainsKey(key))
-                {
-                    var handlersCollection = handlers[key];
-                    NotifySubscribersAsync(value, handlersCollection)
-                        .ToObservable()
-                        .Subscribe();
-                }
+                var promise = promises[key];
+                promise.SetValue(value);
             });
         }
 
         public bool AddHandler(TKey key, Action<TValue> handlerSelector)
         {
-            return DoInLock(() =>
+            var disposable = DoInLock(() =>
             {
-                if (promises.Contains(key) || values.ContainsKey(key))
+                if (!promises.ContainsKey(key))
                 {
-                    return false;
+                    return null;
                 }
                 else
                 {
-                    InternalAddHandler(key, handlerSelector);
-                    return true;
+                    var promise = promises[key];
+                    return promise.Subscribe(handlerSelector);
                 }
             });
+
+            if (object.Equals(disposable, Disposable.Empty))
+            {
+                var promise = DoInLock(() => promises[key]);
+                handlerSelector(promise.Value);
+                return true;
+            }
+
+            return disposable != null;
         }
     }
 }

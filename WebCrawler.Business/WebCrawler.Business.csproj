@@ -66,6 +66,7 @@
     <Compile Include="Crawler.cs" />
     <Compile Include="IRepository.cs" />
     <Compile Include="Models\CrawledPageModel.cs" />
+    <Compile Include="Promises\PromisedValue.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Repository.cs" />
     <Compile Include="Services\HtmlPageService.cs" />
