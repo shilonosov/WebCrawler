@@ -15,6 +15,8 @@ namespace WebCrawler.Business.Services
 
     public class HtmlPageService : IHtmlPageService
     {
+        private const string DoubleSlash = "//";
+
         private IEnumerable<Uri> ComposeUriList(CQ dom, Uri pageUri)
         {
             var result = new HashSet<Uri>();
@@ -23,12 +25,20 @@ namespace WebCrawler.Business.Services
                 var href = domElement.GetAttribute("href", string.Empty);
                 if (Uri.IsWellFormedUriString(href, UriKind.Relative))
                 {
-                    href = pageUri.GetLeftPart(UriPartial.Authority) + href;
+                    if (href.StartsWith(DoubleSlash))
+                    {
+                        href = pageUri.GetLeftPart(UriPartial.Scheme) + href.Substring(DoubleSlash.Length);
+                    }
+                    else
+                    {
+                        href = pageUri.GetLeftPart(UriPartial.Authority) + href;
+                    }
                 }
 
                 Uri uri;
                 if (Uri.TryCreate(href, UriKind.Absolute, out uri))
                 {
+
                     if (string.Equals(uri.Scheme, Uri.UriSchemeHttp) || string.Equals(uri.Scheme, Uri.UriSchemeHttps))
                     {
                         result.Add(uri);
@@ -42,11 +52,18 @@ namespace WebCrawler.Business.Services
         {
             using (var httpClient = new HttpClient())
             {
-                var html = await httpClient.GetStringAsync(pageUri);
-                var dom = CQ.CreateDocument(html);
-                var links = dom["a"];
-                // TODO: check if link started with '//'
-                return ComposeUriList(links, pageUri);
+                try
+                {
+                    var html = await httpClient.GetStringAsync(pageUri);
+                    var dom = CQ.CreateDocument(html);
+                    var links = dom["a"];
+                    return ComposeUriList(links, pageUri);
+                }
+                catch
+                {
+                    //TODO: add logging?
+                    return new Uri[0];
+                }
             }
         }
     }

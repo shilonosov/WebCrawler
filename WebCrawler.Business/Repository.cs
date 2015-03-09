@@ -91,19 +91,6 @@ namespace WebCrawler.Business
         }
     }
 
-    public class ThreadSafeDictionary<TKey, TValue> : ThreadSafeCollection<Dictionary<TKey, TValue>, KeyValuePair<TKey, TValue>>
-    {
-        public TValue GetValue(TKey key)
-        {
-            return DoInLock(() => Collection[key]);
-        }
-
-        public bool ContainsKey(TKey key)
-        {
-            return DoInLock(() => Collection.ContainsKey(key));
-        }
-    }
-
     public class PromiseRepository<TKey, TValue> : ThreadSafeWrapper
     {
         private IDictionary<TKey, PromisedValue<TValue>> promises;

@@ -67,7 +67,7 @@ namespace WebCrowler
 
         private void CrawlingCompleted()
         {
-            //UiUnlock();
+            UiUnlock();
         }
 
         private void UiUnlock()

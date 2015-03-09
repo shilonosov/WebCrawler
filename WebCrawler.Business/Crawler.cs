@@ -28,7 +28,6 @@ namespace WebCrawler.Business
 
     public class Crawler : ICrawler
     {
-        // TODO:
         private PromiseRepository<Uri, CrawledPageModel> visitedPromises;
         private IHtmlPageService HtmlPageService { get; set; }
 
@@ -56,15 +55,19 @@ namespace WebCrawler.Business
                     return;
                 }
 
+                var tasks = new List<Task>();
                 foreach (var uri in childLinks)
                 {
                     if (booleanDisposable.IsDisposed)
                     {
                         return;
                     }
+                    //var task = Task.Factory.StartNew(() => ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable));
+                    //tasks.Add(task);
                     await ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable);
                 }
 
+                //Task.WaitAll(tasks.ToArray());
                 if (level == 0)
                 {
                     observable.OnCompleted();
