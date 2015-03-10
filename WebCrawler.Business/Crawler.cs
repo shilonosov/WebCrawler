@@ -38,7 +38,8 @@ namespace WebCrawler.Business
 
         static Crawler()
         {
-            Scheduler = new TaskPoolScheduler(new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(2)));
+            var taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(2));
+            Scheduler = new TaskPoolScheduler(taskFactory);
             //Scheduler = CurrentThreadScheduler.Instance;
             //Scheduler = ThreadPoolScheduler.Instance;
         }

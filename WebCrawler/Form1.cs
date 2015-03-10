@@ -47,7 +47,7 @@ namespace WebCrowler
                 UiLock();
                 crawler
                     .Crawl(searchUri, 2)
-                    .SubscribeOn(TaskPoolScheduler.Default)
+                    //.SubscribeOn(TaskPoolScheduler.Default)
                     .ObserveOn(new ControlScheduler(this))
                     .Subscribe(CrawlingNext, CrawlingCompleted);
             }

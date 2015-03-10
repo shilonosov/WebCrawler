@@ -12,6 +12,17 @@ using CsQuery;
 
 namespace WebCrawler.Business.Services
 {
+    /*
+    var r = Observable
+        .Range(0, 10)
+        .SubscribeOn(ThreadPoolScheduler.Instance)
+        .Select(x => DownloadTask(url, x).ToObservable())
+        .Merge()
+        .ToList()
+        .Wait();
+    */
+
+
     public interface IHtmlPageService
     {
         Task<IList<Uri>> ParseHtmlForLinksAsync(Uri pageUri);
