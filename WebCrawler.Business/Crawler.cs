@@ -38,11 +38,12 @@ namespace WebCrawler.Business
 
         static Crawler()
         {
-            //Scheduler = new TaskPoolScheduler(new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(1)));
-            Scheduler = CurrentThreadScheduler.Instance;
+            Scheduler = new TaskPoolScheduler(new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(2)));
+            //Scheduler = CurrentThreadScheduler.Instance;
+            //Scheduler = ThreadPoolScheduler.Instance;
         }
 
-        private IObservable<IObservable<Unit>> ParsePage(
+        private async Task<IObservable<IObservable<Unit>>> ParsePage(
             Uri pageUri,
             uint level,
             uint bottomLevel,
@@ -60,7 +61,7 @@ namespace WebCrawler.Business
 
             if (visitedPromises.TryAddPromise(pageUri))
             {
-                var childLinks = HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+                var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
 
                 var crawledPage = new CrawledPageModel(pageUri, childLinks, level);
                 visitedPromises.AddValue(pageUri, crawledPage);
@@ -85,9 +86,13 @@ namespace WebCrawler.Business
                                 {
                                     return Observable.Empty<IObservable<Unit>>();
                                 }
-                                var r = Observable.Start(
-                                    () => ParsePage(x, level + 1, bottomLevel, observable, booleanDisposable),
-                                    Scheduler).Merge();
+                                var r = Observable.Start(() =>
+                                {
+                                    return ParsePage(x, level + 1, bottomLevel, observable, booleanDisposable)
+                                        .ToObservable()
+                                        .Wait();
+                                }, Scheduler)
+                                    .Merge();
                                 return r;
                             })
                             .Merge();

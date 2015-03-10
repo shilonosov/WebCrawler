@@ -14,42 +14,43 @@ namespace WebCrawler.Business.Services
 {
     public interface IHtmlPageService
     {
-        IList<Uri> ParseHtmlForLinksAsync(Uri pageUri);
+        Task<IList<Uri>> ParseHtmlForLinksAsync(Uri pageUri);
     }
 
     public class HtmlPageService : ThreadSafeWrapper, IHtmlPageService
     {
         private const string DoubleSlash = "//";
 
-        public IList<Uri> ParseHtmlForLinksAsync(Uri pageUri)
+        public async Task<IList<Uri>> ParseHtmlForLinksAsync(Uri pageUri)
         {
+            IList<Uri> result;
             try
             {
+                var stopWatch = new Stopwatch();
+                stopWatch.Start();
+                Debug.WriteLine(string.Format("starting {0}", pageUri.AbsoluteUri));
+
+                string html;
                 using (var httpClient = new HttpClient())
                 {
-                    var stopWatch = new Stopwatch();
-                    stopWatch.Start();
-                    Debug.WriteLine(string.Format("starting {0}", pageUri.AbsoluteUri));
-
-                    var html = DoInLock(() =>  httpClient.GetStringAsync(pageUri.AbsoluteUri).ToObservable().Wait());
-                    Debug.WriteLine("loaded {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
-
-                    var dom = CQ.CreateDocument(html);
-                    var links = dom["a"];
-                    var result = ComposeUriList(links, pageUri).ToList();
-                    
-                    stopWatch.Stop();
-                    Debug.WriteLine("loaded+parsed {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
-
-                    return result;
+                    html = await httpClient.GetStringAsync(pageUri.AbsoluteUri);
                 }
+                Debug.WriteLine("loaded {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
+
+                var dom = CQ.CreateDocument(html);
+                var links = dom["a"];
+                result = ComposeUriList(links, pageUri).ToList();
+
+                stopWatch.Stop();
+                Debug.WriteLine("loaded+parsed {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
             }
-            catch(Exception e)
+            catch (Exception e)
             {
+                result = new Uri[0];
                 //TODO: add logging?
                 Debug.WriteLine("{0} was failed due to: {1}", pageUri.AbsoluteUri, e.Message);
             }
-            return new Uri[0].ToList();
+            return result;
         }
 
         private IEnumerable<Uri> ComposeUriList(IEnumerable<IDomObject> dom, Uri pageUri)
