@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
@@ -12,6 +13,7 @@ using System.Threading.Tasks;
 
 using Autofac.Util;
 
+using WebCrawler.Business.Extensions.Parallel;
 using WebCrawler.Business.Models;
 
 using Disposable = System.Reactive.Disposables.Disposable;
@@ -28,59 +30,101 @@ namespace WebCrawler.Business
 
     public class Crawler : ICrawler
     {
-        private PromiseRepository<Uri, CrawledPageModel> visitedPromises;
+        private readonly PromiseRepository<Uri, CrawledPageModel> visitedPromises;
         private IHtmlPageService HtmlPageService { get; set; }
 
-        private async Task ParsePage(
+        private static IScheduler Scheduler { get; set; }
+        private static int counter = 0;
+
+        static Crawler()
+        {
+            //Scheduler = new TaskPoolScheduler(new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(1)));
+            Scheduler = CurrentThreadScheduler.Instance;
+        }
+
+        private IObservable<IObservable<Unit>> ParsePage(
             Uri pageUri,
             uint level,
             uint bottomLevel,
             IObserver<CrawledPageModel> observable,
-            BooleanDisposable booleanDisposable)
+            ICancelable booleanDisposable)
         {
+            Interlocked.Increment(ref counter);
+            Debug.WriteLine("{0} | {1}", counter, pageUri.AbsoluteUri);
+
             if (booleanDisposable.IsDisposed)
             {
-                return;
+                Interlocked.Decrement(ref counter);
+                return Observable.Empty<IObservable<Unit>>();
             }
 
             if (visitedPromises.TryAddPromise(pageUri))
             {
-                var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+                var childLinks = HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+
                 var crawledPage = new CrawledPageModel(pageUri, childLinks, level);
                 visitedPromises.AddValue(pageUri, crawledPage);
                 observable.OnNext(crawledPage);
 
                 if (level >= bottomLevel)
                 {
-                    return;
+                    Interlocked.Decrement(ref counter);
+                    return Observable.Empty<IObservable<Unit>>();
                 }
 
-                var tasks = new List<Task>();
-                foreach (var uri in childLinks)
+                IObservable<IObservable<Unit>> result;
+                if (childLinks.Any())
                 {
-                    if (booleanDisposable.IsDisposed)
-                    {
-                        return;
-                    }
-                    //var task = Task.Factory.StartNew(() => ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable));
-                    //tasks.Add(task);
-                    await ParsePage(uri, level + 1, bottomLevel, observable, booleanDisposable);
+                    result = childLinks
+                        .ToObservable()
+                        .ObserveOn(Scheduler)
+                        .Select(
+                            x =>
+                            {
+                                if (booleanDisposable.IsDisposed)
+                                {
+                                    return Observable.Empty<IObservable<Unit>>();
+                                }
+                                var r = Observable.Start(
+                                    () => ParsePage(x, level + 1, bottomLevel, observable, booleanDisposable),
+                                    Scheduler).Merge();
+                                return r;
+                            })
+                            .Merge();
+                }
+                else
+                {
+                    Interlocked.Decrement(ref counter);
+                    result = Observable.Empty<IObservable<Unit>>();
                 }
 
-                //Task.WaitAll(tasks.ToArray());
                 if (level == 0)
                 {
+                    result
+                        .Wait().Subscribe(_ =>
+                        {
+                            Debug.WriteLine("level 0 completed");
+                        });
                     observable.OnCompleted();
+                }
+                else
+                {
+                    Interlocked.Decrement(ref counter);
+                    return result;
                 }
             }
             else
             {
+                Debug.WriteLine(string.Format("{0} is promised, skipped", pageUri.AbsoluteUri));
                 visitedPromises.AddHandler(pageUri, x =>
                 {
-                    var crawledPage = new CrawledPageModel(pageUri, x, level);
-                    observable.OnNext(crawledPage);
+                    observable.OnNext(new CrawledPageModel(pageUri, x, level));
+                    Debug.WriteLine(string.Format("{0} promise resolved", x.PageUri.AbsoluteUri));
                 });
             }
+
+            Interlocked.Decrement(ref counter);
+            return Observable.Empty<IObservable<Unit>>();
         }
 
         public Crawler(IHtmlPageService htmlPageService)
@@ -94,9 +138,7 @@ namespace WebCrawler.Business
             return Observable.Create<CrawledPageModel>(o =>
             {
                 var disposable = new BooleanDisposable();
-                ParsePage(startUri, 0, bottomLevel, o, disposable)
-                    .ToObservable()
-                    .Subscribe();
+                Observable.Start(() => ParsePage(startUri, 0, bottomLevel, o, disposable));
                 return disposable;
             });
         }
