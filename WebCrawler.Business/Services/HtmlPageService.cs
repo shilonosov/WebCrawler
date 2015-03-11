@@ -28,40 +28,31 @@ namespace WebCrawler.Business.Services
         Task<IList<Uri>> ParseHtmlForLinksAsync(Uri pageUri);
     }
 
-    public class HtmlPageService : ThreadSafeWrapper, IHtmlPageService
+    public class HtmlPageService : IHtmlPageService
     {
+        private int Timeout { get; set; }
+
+        public HtmlPageService()
+        {
+            Timeout = 5;
+        }
+
         private const string DoubleSlash = "//";
 
-        public async Task<IList<Uri>> ParseHtmlForLinksAsync(Uri pageUri)
+        private async Task<string> DownloadHtmlAsync(Uri uri)
         {
-            IList<Uri> result;
-            try
+            using (var httpClient = new HttpClient())
             {
-                var stopWatch = new Stopwatch();
-                stopWatch.Start();
-                Debug.WriteLine(string.Format("starting {0}", pageUri.AbsoluteUri));
-
-                string html;
-                using (var httpClient = new HttpClient())
-                {
-                    html = await httpClient.GetStringAsync(pageUri.AbsoluteUri);
-                }
-                Debug.WriteLine("loaded {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
-
-                var dom = CQ.CreateDocument(html);
-                var links = dom["a"];
-                result = ComposeUriList(links, pageUri).ToList();
-
-                stopWatch.Stop();
-                Debug.WriteLine("loaded+parsed {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
+                httpClient.Timeout = TimeSpan.FromSeconds(Timeout);
+                return await httpClient.GetStringAsync(uri);
             }
-            catch (Exception e)
-            {
-                result = new Uri[0];
-                //TODO: add logging?
-                Debug.WriteLine("{0} was failed due to: {1}", pageUri.AbsoluteUri, e.Message);
-            }
-            return result;
+        }
+
+        private IEnumerable<Uri> CollectLinks(string html, Uri uri)
+        {
+            var dom = CQ.CreateDocument(html);
+            var links = dom["a"];
+            return ComposeUriList(links, uri).ToList();
         }
 
         private IEnumerable<Uri> ComposeUriList(IEnumerable<IDomObject> dom, Uri pageUri)
@@ -92,6 +83,32 @@ namespace WebCrawler.Business.Services
                 }
             }
             return result;
+        }
+
+        public async Task<IList<Uri>> ParseHtmlForLinksAsync(Uri pageUri)
+        {
+            IEnumerable<Uri> result;
+            try
+            {
+                var stopWatch = new Stopwatch();
+                stopWatch.Start();
+                //Debug.WriteLine(string.Format("starting {0}", pageUri.AbsoluteUri));
+
+                var html = await DownloadHtmlAsync(pageUri);
+                //Debug.WriteLine("loaded {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
+
+                result = CollectLinks(html, pageUri);
+
+                stopWatch.Stop();
+                //Debug.WriteLine("loaded+parsed {0} in {1}", pageUri.AbsoluteUri, stopWatch.Elapsed.TotalSeconds);
+            }
+            catch (Exception e)
+            {
+                result = new Uri[0];
+                //TODO: add logging?
+                Debug.WriteLine("{0} was failed due to: {1}", pageUri.AbsoluteUri, e.Message);
+            }
+            return result.ToList();
         }
     }
 }

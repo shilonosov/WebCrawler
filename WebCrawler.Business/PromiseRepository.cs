@@ -11,11 +11,9 @@ using WebCrawler.Business.Promises;
 
 namespace WebCrawler.Business
 {
-    // TODO: move classes to separate files
-
     public class PromiseRepository<TKey, TValue> : ThreadSafeWrapper
     {
-        private IDictionary<TKey, PromisedValue<TValue>> promises;
+        private readonly IDictionary<TKey, PromisedValue<TValue>> promises;
 
         public PromiseRepository() : base()
         {
@@ -52,11 +50,8 @@ namespace WebCrawler.Business
                 {
                     return null;
                 }
-                else
-                {
-                    var promise = promises[key];
-                    return promise.Subscribe(handlerSelector);
-                }
+                var promise = promises[key];
+                return promise.Subscribe(handlerSelector);
             });
 
             if (object.Equals(disposable, Disposable.Empty))
@@ -67,6 +62,11 @@ namespace WebCrawler.Business
             }
 
             return disposable != null;
+        }
+
+        public void Clear()
+        {
+            DoInLock(() => promises.Clear());
         }
     }
 }

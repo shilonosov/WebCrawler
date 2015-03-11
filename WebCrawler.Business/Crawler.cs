@@ -38,14 +38,13 @@ namespace WebCrawler.Business
 
         static Crawler()
         {
-            var taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(2));
+            var taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(1));
             Scheduler = new TaskPoolScheduler(taskFactory);
-            //Scheduler = CurrentThreadScheduler.Instance;
-            //Scheduler = ThreadPoolScheduler.Instance;
         }
 
         private async Task<IObservable<IObservable<Unit>>> ParsePage(
             Uri pageUri,
+            Uri parentUri,
             uint level,
             uint bottomLevel,
             IObserver<CrawledPageModel> observable,
@@ -64,7 +63,7 @@ namespace WebCrawler.Business
             {
                 var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
 
-                var crawledPage = new CrawledPageModel(pageUri, childLinks, level);
+                var crawledPage = new CrawledPageModel(pageUri, parentUri, level, childLinks);
                 visitedPromises.AddValue(pageUri, crawledPage);
                 observable.OnNext(crawledPage);
 
@@ -78,40 +77,23 @@ namespace WebCrawler.Business
                 if (childLinks.Any())
                 {
                     result = childLinks
-                        .ToObservable()
-                        .ObserveOn(Scheduler)
-                        .Select(
-                            x =>
-                            {
-                                if (booleanDisposable.IsDisposed)
-                                {
-                                    return Observable.Empty<IObservable<Unit>>();
-                                }
-                                var r = Observable.Start(() =>
-                                {
-                                    return ParsePage(x, level + 1, bottomLevel, observable, booleanDisposable)
-                                        .ToObservable()
-                                        .Wait();
-                                }, Scheduler)
-                                    .Merge();
-                                return r;
-                            })
-                            .Merge();
+                        .ToObservable(Scheduler)
+                        .Select(x => ComposeRecursiveCrawlObservable(pageUri, level, bottomLevel, observable, booleanDisposable, x))
+                        .Merge();
                 }
                 else
                 {
-                    Interlocked.Decrement(ref counter);
+                    //Interlocked.Decrement(ref counter);
                     result = Observable.Empty<IObservable<Unit>>();
                 }
 
                 if (level == 0)
                 {
-                    result
-                        .Wait().Subscribe(_ =>
-                        {
-                            Debug.WriteLine("level 0 completed");
-                        });
-                    observable.OnCompleted();
+                    result.Subscribe(_ => { }, () =>
+                    {
+                        Debug.WriteLine("level 0 completed");
+                        observable.OnCompleted();
+                    });
                 }
                 else
                 {
@@ -124,13 +106,27 @@ namespace WebCrawler.Business
                 Debug.WriteLine(string.Format("{0} is promised, skipped", pageUri.AbsoluteUri));
                 visitedPromises.AddHandler(pageUri, x =>
                 {
-                    observable.OnNext(new CrawledPageModel(pageUri, x, level));
+                    observable.OnNext(new CrawledPageModel(pageUri, parentUri, x, level));
                     Debug.WriteLine(string.Format("{0} promise resolved", x.PageUri.AbsoluteUri));
                 });
             }
 
             Interlocked.Decrement(ref counter);
             return Observable.Empty<IObservable<Unit>>();
+        }
+
+        private IObservable<IObservable<Unit>> ComposeRecursiveCrawlObservable(Uri parentUri, uint level, uint bottomLevel, IObserver<CrawledPageModel> observable, ICancelable booleanDisposable, Uri x)
+        {
+            if (booleanDisposable.IsDisposed)
+            {
+                return Observable.Empty<IObservable<Unit>>();
+            }
+
+            return Observable
+                .Start(
+                    () => ParsePage(x, parentUri, level + 1, bottomLevel, observable, booleanDisposable).ToObservable().Merge(),
+                    Scheduler)
+                .Merge();
         }
 
         public Crawler(IHtmlPageService htmlPageService)
@@ -141,10 +137,11 @@ namespace WebCrawler.Business
 
         public IObservable<CrawledPageModel> Crawl(Uri startUri, uint bottomLevel)
         {
+            visitedPromises.Clear();
             return Observable.Create<CrawledPageModel>(o =>
             {
                 var disposable = new BooleanDisposable();
-                Observable.Start(() => ParsePage(startUri, 0, bottomLevel, o, disposable));
+                Observable.Start(() => ParsePage(startUri, null, 0, bottomLevel, o, disposable), Scheduler);
                 return disposable;
             });
         }
