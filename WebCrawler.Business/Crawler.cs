@@ -32,14 +32,18 @@ namespace WebCrawler.Business
     {
         private readonly PromiseRepository<Uri, CrawledPageModel> visitedPromises;
         private IHtmlPageService HtmlPageService { get; set; }
-
+        
+        private static SemaphoreSlim Semaphore { get; set; }
         private static IScheduler Scheduler { get; set; }
         private static int counter = 0;
 
         static Crawler()
         {
-            var taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(1));
+            var concurencyFactor = 8;
+            var taskFactory = new TaskFactory(new LimitedConcurrencyLevelTaskScheduler(concurencyFactor));
+            
             Scheduler = new TaskPoolScheduler(taskFactory);
+            Semaphore = new SemaphoreSlim(concurencyFactor);
         }
 
         private async Task<IObservable<IObservable<Unit>>> ParsePage(
@@ -50,18 +54,26 @@ namespace WebCrawler.Business
             IObserver<CrawledPageModel> observable,
             ICancelable booleanDisposable)
         {
-            Interlocked.Increment(ref counter);
-            Debug.WriteLine("{0} | {1}", counter, pageUri.AbsoluteUri);
-
             if (booleanDisposable.IsDisposed)
             {
-                Interlocked.Decrement(ref counter);
                 return Observable.Empty<IObservable<Unit>>();
             }
 
             if (visitedPromises.TryAddPromise(pageUri))
             {
-                var childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+                IList<Uri> childLinks;
+                await Semaphore.WaitAsync();
+                try
+                {
+                    Interlocked.Increment(ref counter);
+                    Debug.WriteLine("{0} | {1}", counter, pageUri.AbsoluteUri);
+                    childLinks = await HtmlPageService.ParseHtmlForLinksAsync(pageUri);
+                    Interlocked.Decrement(ref counter);
+                }
+                finally
+                {
+                    Semaphore.Release();
+                }
 
                 var crawledPage = new CrawledPageModel(pageUri, parentUri, level, childLinks);
                 visitedPromises.AddValue(pageUri, crawledPage);
@@ -69,7 +81,6 @@ namespace WebCrawler.Business
 
                 if (level >= bottomLevel)
                 {
-                    Interlocked.Decrement(ref counter);
                     return Observable.Empty<IObservable<Unit>>();
                 }
 
@@ -97,7 +108,6 @@ namespace WebCrawler.Business
                 }
                 else
                 {
-                    Interlocked.Decrement(ref counter);
                     return result;
                 }
             }
@@ -111,7 +121,6 @@ namespace WebCrawler.Business
                 });
             }
 
-            Interlocked.Decrement(ref counter);
             return Observable.Empty<IObservable<Unit>>();
         }
 
